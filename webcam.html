@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  <style type="text/css">@charset "UTF-8";[ng\:cloak],[ng-cloak],[data-ng-cloak],[x-ng-cloak],.ng-cloak,.x-ng-cloak,.ng-hide:not(.ng-hide-animate){display:none !important;}ng\:form{display:block;}.ng-animate-shim{visibility:hidden;}.ng-anchor{position:absolute;}
+  </style>
+  <style id="stndz-style">
+  </style>
+
+  <title>AWS Rekognition Demo</title>
+
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="googlebot" content="noindex, nofollow">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+
+  <!--<link rel="stylesheet" type="text/css" href="./result-light.css">-->
+
+  <script type="text/javascript" src="https://sdk.amazonaws.com/js/aws-sdk-2.26.0.min.js"></script>
+  <script type="text/javascript" src="https://code.jquery.com/jquery-3.1.1.min.js"></script>
+  <script type="text/javascript" src="https://s3.amazonaws.com/devspacepaulsites/webcam.min.js"></script>
+
+  <style id="compiled-css" type="text/css">
+
+    #webcamFrame {
+      margin: 10px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    #videoFrame {
+      top: 0px;
+      left: 0px;
+    }
+
+    #labelResults {
+      color: black;
+      background-color: rgba(144, 231, 156, 0.5);
+
+      position: absolute;
+      top: 730px;
+      left: 0%;
+      width: 1270px;
+      height: 190px;
+      padding: 5px;
+      padding-left: 10px;
+      margin: 10px;
+
+      column-count: 3;
+
+      text-shadow: 1px 1px white;
+      font-family: monospace;
+
+      border-color: black;
+      border-width: 1px;
+      border-style: dashed;
+    }
+
+    .faceResult {
+      color: black;
+      background-color: rgba(118, 161, 224, 0.4);
+      /*visibility: hidden;*/
+
+      position: absolute;
+      top: 20px;
+      left: 20px;
+      width: 200px;
+      padding: 5px;
+
+      text-shadow: 1px 1px white;
+      font-family: monospace;
+
+      border-color: black;
+      border-width: 1px;
+      border-style: dashed;
+    }
+
+    .rekLabel {
+      font-size: 20pt;
+    }
+
+    .rekType {
+      font-size: 20pt;
+    }
+
+    .rekScore {
+      font-size: 12pt;
+    }
+
+  	.speech-bubble .arrow {
+  	  border-style: solid;
+  	  position: absolute;
+  	}
+
+  	.bottom {
+  	    border-color: #c8c8c8 transparent transparent transparent;
+  	    border-width: 8px 8px 0px 8px;
+  	    bottom: -8px;
+  	}
+
+    #box {
+      position:absolute;
+      visibility: hidden;
+      border-color: #eb0202;
+      border-width: 1px;
+      border-style: dotted;
+    }
+
+    #speechBubble {
+      position:absolute;
+      visibility: hidden;
+      opacity: 0.8;
+
+      width:270px;
+      height:30px;
+      padding:50px 40px;
+      margin:1em auto 80px;
+      text-align:center;
+      columns: #000000;
+      background:#ffffff;
+
+      border-color: #000000;
+      border-width: 1px;
+      border-style: solid;
+      -webkit-border-top-left-radius:220px 120px;
+      -webkit-border-top-right-radius:220px 120px;
+      -webkit-border-bottom-right-radius:220px 120px;
+      -webkit-border-bottom-left-radius:220px 120px;
+      -moz-border-radius:220px / 120px;
+      border-radius:220px / 120px;
+
+      font-size:1.25em;
+      font-family: monospace;
+    }
+
+    /* creates the larger circle */
+    #speechBubble:before {
+      content:"";
+      position:absolute;
+
+      bottom:-20px;
+      left:50px;
+      width:30px;
+      height:30px;
+      background:#ffffff;
+
+      -webkit-border-radius:30px;
+      -moz-border-radius:30px;
+      border-radius:30px;
+      border-color: #000000;
+      border-width: 1px;
+      border-style: solid;
+    }
+
+    /* creates the smaller circle */
+    #speechBubble:after {
+      content:"";
+      position:absolute;
+
+      bottom:-30px;
+      left:30px;
+      width:15px;
+      height:15px;
+      background:#ffffff;
+
+      -webkit-border-radius:15px;
+      -moz-border-radius:15px;
+      border-radius:15px;
+      border-color: #000000;
+      border-width: 1px;
+      border-style: solid;
+    }
+
+  </style>
+
+  <script type="text/javascript">
+
+    const LABEL_UPDATE_CYCLES = 4
+    const UPDATE_MILLIS = 500
+    
+    var skippedCycles = LABEL_UPDATE_CYCLES
+
+    var emotionTexts = {
+      "CALM": "Tengo sueño, ¡necesito la energía de AWS!",
+      "SAD": "Los servidores on-prem me entristecen...",
+      "CONFUSED": "No entiendo esta demo, voy a preguntarle a un SA",
+      "HAPPY": "¡Me encanta este AWS Summit 2019!",
+      "ANGRY": "El hambre me tiene de mal humor...",
+      "DISGUSTED": "¿Algún médico en la sala?",
+      "SURPRISED": "¡Hala! ¡como mola esta demo!"
+    };
+
+    var rekognition = null;
+    var camWidth = 0;
+    var camHeight = 0;
+
+    function startRekognition() {
+
+      AWS.config.region = 'us-east-1';
+      rekognition = new AWS.Rekognition({
+        "accessKeyId": "******************",
+        "secretAccessKey": "****************",
+      });
+
+      /*
+      AWS.config.credentials = new AWS.CognitoIdentityCredentials({
+        IdentityPoolId: '***********************',
+      });
+      rekognition = new AWS.Rekognition();
+      */
+    }
+
+    function getAndListLabels() {
+
+        let mainEmotion = null
+
+        Webcam.snap(function(data_uri) {
+
+          var imageBlob = dataURItoBlob(data_uri);
+          var params = {
+            Image: {
+              Bytes: imageBlob
+            }
+          };
+          var params1 = {
+            Attributes: ["ALL"],
+            Image: {
+              Bytes: imageBlob
+            }
+          };
+
+          if (skippedCycles === LABEL_UPDATE_CYCLES)
+          {
+            skippedCycles = 0
+            rekognition.detectLabels(params, function(err, data) {
+
+              if (err) console.log(err, err.stack); // an error occurred
+              else {
+
+                $("#labelResults").empty();
+                let labelTemplate = "<div><span class='rekLabel'></span> - <span class='rekScore'></span> %</div>";
+
+                $.each(data.Labels, function(index, value) {
+
+                  if (value.Confidence > 60) {
+                    let LabelToAdd = $(labelTemplate);
+                    $(LabelToAdd).find(".rekLabel").text(value.Name.toLowerCase());
+                    $(LabelToAdd).find(".rekScore").text(Math.floor(value.Confidence));
+                    $("#labelResults").append(LabelToAdd);
+                  }
+                });
+              }
+            });
+          } else {
+            skippedCycles += 1
+          }
+
+          rekognition.detectFaces(params1, function(err, data) {
+            if (err) console.log(err, err.stack); // an error occurred
+            else {
+              // Clear the container popups
+              let faceResultsContainer = $("#faceResults");
+              faceResultsContainer.empty();
+              faceResultsContainer = faceResultsContainer[0];
+
+              // These are the templates to be used when creating the popups
+              faceResultTemplate = "<div class=\"faceResult\"></div>";
+              labelTemplate = "<div><span class='rekType'></span> - <span class='rekScore'></span> %</div>";
+
+              $.each(data.FaceDetails, function (idx, face) {
+                let faceResultPopup = $(faceResultTemplate);
+                $.each(face.Emotions, function (idx, emotion) {
+                  if (emotion.Confidence > 50) {
+                    let labelToAdd = $(labelTemplate);
+                    $(labelToAdd).find(".rekType").text(emotion.Type.toLowerCase());
+                    $(labelToAdd).find(".rekScore").text(Math.floor(emotion.Confidence));
+                    faceResultPopup.append(labelToAdd);
+
+                    if (mainEmotion == null || (mainEmotion != null && emotion.Confidence > mainEmotion.Confidence)) {
+                      mainEmotion = emotion;
+                    }
+                  }
+                });
+
+                faceResultPopup.get(0).style.top = (face.BoundingBox.Top * camHeight - 50) + "px";
+                faceResultPopup.get(0).style.left = (face.BoundingBox.Left * camWidth) + "px";
+
+                $(faceResultsContainer).append(faceResultPopup);
+              });
+
+              if (data.FaceDetails.length > 0) {
+                /*
+                //Hair:
+                document.getElementById("overlay1").style.width = (data.FaceDetails[0].BoundingBox.Width * camWidth * 1.2) + "px";
+                document.getElementById("overlay1").style.height = (data.FaceDetails[0].BoundingBox.Height * camHeight * 0.5) + "px";
+                document.getElementById("overlay1").style.left = (data.FaceDetails[0].BoundingBox.Left * camWidth) + "px";
+                document.getElementById("overlay1").style.top = ((data.FaceDetails[0].BoundingBox.Top * camHeight) + (data.FaceDetails[0].BoundingBox.Height * camHeight * 0.05)) + "px";
+
+                //Moustache:
+                document.getElementById("overlay2").style.width = (data.FaceDetails[0].BoundingBox.Width * camWidth) + "px";
+                document.getElementById("overlay2").style.height = (data.FaceDetails[0].BoundingBox.Height * camHeight * 0.1) + "px";
+                $.each(data.FaceDetails[0].Landmarks, function(index, value) {
+                  if (value.Type = "mouthUp") {
+                    document.getElementById("overlay2").style.left = ((value.X * data.FaceDetails[0].BoundingBox.Width * camWidth) + (data.FaceDetails[0].BoundingBox.Left * camWidth) - ((data.FaceDetails[0].BoundingBox.Width * camWidth)/2)) + "px";
+                    document.getElementById("overlay2").style.top = ((value.Y * data.FaceDetails[0].BoundingBox.Height * camHeight) + (data.FaceDetails[0].BoundingBox.Top * camHeight) + (data.FaceDetails[0].BoundingBox.Height * camHeight * 0.15)) + "px";
+                  }
+                })
+               */
+
+                // bounding box
+                let box = document.getElementById("box")
+                box.style.left = (data.FaceDetails[0].BoundingBox.Left * camWidth) + "px";
+                box.style.width = (data.FaceDetails[0].BoundingBox.Width * camWidth) + "px";
+                box.style.top = (data.FaceDetails[0].BoundingBox.Top * camHeight) + "px";
+                box.style.height = (data.FaceDetails[0].BoundingBox.Height * camHeight) + "px";
+
+                // speech bubbles
+                // let speechBubble = document.getElementById("speechBubble")
+                // speechBubble.style.left = ((data.FaceDetails[0].BoundingBox.Left * camWidth) + (data.FaceDetails[0].BoundingBox.Width * camWidth)) + "px";
+                // speechBubble.style.top = ((data.FaceDetails[0].BoundingBox.Top * camHeight) - 100) + "px";
+
+                // if (mainEmotion != null && mainEmotion.Confidence > 30 && mainEmotion.Type in emotionTexts) {
+                  // speechBubble.innerText = emotionTexts[mainEmotion.Type];
+                  // speechBubble.style.visibility = "visible";
+                // }
+
+              } else {
+                // no faces onscreen
+                // document.getElementById("speechBubble").style.visibility = "hidden";
+                // document.getElementById("faceResults").style.visibility = "hidden";
+              }
+            }
+          });
+        });
+    }
+
+    function dataURItoBlob(dataURI) {
+      var binary = atob(dataURI.split(',')[1]);
+      var array = [];
+      for (var i = 0; i < binary.length; i++) {
+        array.push(binary.charCodeAt(i));
+      }
+      return new Uint8Array(array);
+    }
+
+    window.onload = function() {
+
+      let viewWidth = $(window).width();
+      let viewHeight = $(window).height();
+
+      if (viewWidth > 1280) {
+        viewWidth = 1280;
+      }
+      if (viewHeight > 720) {
+        viewHeight = 720;
+      }
+
+      // let viewWidth = 900
+      // let viewHeight = 505
+
+      Webcam.set({
+        width: viewWidth,
+        height: viewHeight,
+        dest_width: viewWidth,
+        dest_height: viewHeight,
+        image_format: 'jpeg',
+        jpeg_quality: 90
+      });
+      Webcam.attach('#videoFrame');
+
+      Webcam.on('live', function(){
+        // get cam view size
+        let videoFrame = document.getElementById("videoFrame")
+        let cam = $(videoFrame).find("video")[0]
+        camWidth = cam.videoWidth
+        camHeight = cam.videoHeight
+        console.log(camWidth + "-" + camHeight)
+        startRekognition();
+        setInterval(function() {
+          getAndListLabels();
+        }, UPDATE_MILLIS);
+      });
+    }
+
+  </script>
+
+</head>
+
+<body id="webcamFrame">
+  <div>
+    <!--img id="overlay1" src="Hair.png" style="position:absolute; left: 40px; top: 40px; width: 40px; height: 40px;"/>
+    <img id="overlay2" src="Moustache.png" style="position:absolute; left: 40px; top: 40px; width: 40px; height: 40px;"/-->
+    <div id="videoFrame"></div>
+    <div id="labelResults"></div>
+    <div id="faceResults"></div>
+    <!-- <label id="speechBubble"></label> -->
+    <div class="arrow bottom right"></div>
+    <div id="box"></div>
+
+  </div>
+
+  <script>
+    // tell the embed parent frame the height of the content
+    if (window.parent && window.parent.parent){
+      window.parent.parent.postMessage(["resultsFrame", {
+        height: document.body.getBoundingClientRect().height,
+        slug: ""
+      }], "*")
+    }
+    // always overwrite window.name, in case users try to set it manually
+    window.name = "result"
+  </script>
+
+</body>
+</html>
